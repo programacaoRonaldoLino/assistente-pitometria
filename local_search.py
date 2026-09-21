@@ -34,31 +34,23 @@ def initialize() -> None:
 
 
 def index_pdf(path: Path) -> int:
-    """Extrai e persiste o texto em lotes, sem manter o PDF inteiro na memória."""
+    """Extrai cada página e libera seu cache antes de continuar."""
     count = 0
     with _connection() as connection:
         connection.execute("DELETE FROM local_pages WHERE source = ?", (path.name,))
-        batch: list[tuple[str, int, str]] = []
         with pdfplumber.open(path) as pdf:
             for number, page in enumerate(pdf.pages, start=1):
-                text = (page.extract_text() or "").strip()
-                if not text:
-                    continue
-                batch.append((path.name, number, text))
-                count += 1
-                if len(batch) >= 10:
-                    connection.executemany(
-                        "INSERT INTO local_pages (source, page, content) VALUES (?, ?, ?)",
-                        batch,
-                    )
-                    connection.commit()
-                    batch.clear()
-        if batch:
-            connection.executemany(
-                "INSERT INTO local_pages (source, page, content) VALUES (?, ?, ?)",
-                batch,
-            )
-            connection.commit()
+                try:
+                    text = (page.extract_text() or "").strip()
+                    if text:
+                        connection.execute(
+                            "INSERT INTO local_pages (source, page, content) VALUES (?, ?, ?)",
+                            (path.name, number, text),
+                        )
+                        connection.commit()
+                        count += 1
+                finally:
+                    page.close()
     return count
 
 
@@ -66,8 +58,10 @@ def search(question: str, selected_sources: list[str] | None = None, limit: int 
     words = list(dict.fromkeys(word.lower() for word in WORD_RE.findall(question)))
     if not words:
         return []
+
     with _connection() as connection:
         rows = connection.execute("SELECT source, page, content FROM local_pages").fetchall()
+
     results = []
     selected = set(selected_sources or [])
     for source, page, content in rows:
@@ -83,4 +77,5 @@ def search(question: str, selected_sources: list[str] | None = None, limit: int 
                     "metadata": {"source": source, "page": page},
                 }
             )
+
     return sorted(results, key=lambda item: item["score"], reverse=True)[:limit]
