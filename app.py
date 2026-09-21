@@ -1,6 +1,26 @@
 from __future__ import annotations
 
 import os
+import shutil
+from pathlib import Path
+
+
+def _install_hosted_secrets() -> None:
+    """Disponibiliza no Streamlit o arquivo secreto montado pela hospedagem."""
+    source_name = os.environ.get("APP_AUTH_SECRETS_FILE", "").strip()
+    if not source_name:
+        return
+
+    source = Path(source_name)
+    if not source.is_file():
+        return
+
+    target = Path(__file__).parent / ".streamlit" / "secrets.toml"
+    target.parent.mkdir(exist_ok=True)
+    shutil.copyfile(source, target)
+
+
+_install_hosted_secrets()
 
 import streamlit as st
 
