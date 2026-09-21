@@ -137,15 +137,22 @@ with st.sidebar:
                 "Adicionar manuais PDF", type="pdf", accept_multiple_files=True, key="admin_uploads"
             )
             if st.button("Indexar manuais enviados", disabled=not uploaded_files, icon=":material/upload_file:"):
-                DOCS_DIR.mkdir(parents=True, exist_ok=True)
-                progress = st.progress(0, text="Preparando manuais...")
-                for position, uploaded in enumerate(uploaded_files, start=1):
-                    destination = DOCS_DIR / uploaded.name
-                    destination.write_bytes(uploaded.getvalue())
-                    pages = index_pdf(destination)
-                    progress.progress(position / len(uploaded_files), text=f"{uploaded.name}: {pages} páginas indexadas.")
-                st.success("Manuais indexados para busca local e IA.")
-                st.rerun()
+                indexed_names = set(indexed_sources())
+                pending_files = [
+                    uploaded for uploaded in uploaded_files if uploaded.name not in indexed_names
+                ]
+                if not pending_files:
+                    st.info("Os manuais selecionados já estão indexados.")
+                else:
+                    DOCS_DIR.mkdir(parents=True, exist_ok=True)
+                    progress = st.progress(0, text="Preparando manuais...")
+                    for position, uploaded in enumerate(pending_files, start=1):
+                        destination = DOCS_DIR / uploaded.name
+                        destination.write_bytes(uploaded.getvalue())
+                        pages = index_pdf(destination)
+                        progress.progress(position / len(pending_files), text=f"{uploaded.name}: {pages} páginas indexadas.")
+                    st.success("Manuais indexados para busca local e IA.")
+                    st.rerun()
 
         with st.expander("Liberar acesso e cotas"):
             with st.form("grant_access_form"):
