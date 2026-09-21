@@ -69,7 +69,7 @@ if not st.user.is_logged_in:
     st.title("Assistente técnico de Pitometria e Macromedição")
     st.write("Entre com sua conta para consultar os manuais autorizados.")
     if st.button("Entrar", type="primary", icon=":material/login:"):
-        st.login()
+        st.login("google")
     st.stop()
 
 email = str(getattr(st.user, "email", "")).strip().lower()
