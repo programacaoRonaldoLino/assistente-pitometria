@@ -10,7 +10,6 @@ import pdfplumber
 
 from access_control import DATA_DIR
 
-
 DB_PATH = DATA_DIR / "portal.db"
 WORD_RE = re.compile(r"[A-Za-zÀ-ÿ0-9]{3,}")
 
@@ -35,19 +34,32 @@ def initialize() -> None:
 
 
 def index_pdf(path: Path) -> int:
-    """Extrai e persiste o texto de cada página do PDF."""
-    pages: list[tuple[str, int, str]] = []
-    with pdfplumber.open(path) as pdf:
-        for number, page in enumerate(pdf.pages, start=1):
-            text = (page.extract_text() or "").strip()
-            if text:
-                pages.append((path.name, number, text))
+    """Extrai e persiste o texto em lotes, sem manter o PDF inteiro na memória."""
+    count = 0
     with _connection() as connection:
         connection.execute("DELETE FROM local_pages WHERE source = ?", (path.name,))
-        connection.executemany(
-            "INSERT INTO local_pages (source, page, content) VALUES (?, ?, ?)", pages
-        )
-    return len(pages)
+        batch: list[tuple[str, int, str]] = []
+        with pdfplumber.open(path) as pdf:
+            for number, page in enumerate(pdf.pages, start=1):
+                text = (page.extract_text() or "").strip()
+                if not text:
+                    continue
+                batch.append((path.name, number, text))
+                count += 1
+                if len(batch) >= 10:
+                    connection.executemany(
+                        "INSERT INTO local_pages (source, page, content) VALUES (?, ?, ?)",
+                        batch,
+                    )
+                    connection.commit()
+                    batch.clear()
+        if batch:
+            connection.executemany(
+                "INSERT INTO local_pages (source, page, content) VALUES (?, ?, ?)",
+                batch,
+            )
+            connection.commit()
+    return count
 
 
 def search(question: str, selected_sources: list[str] | None = None, limit: int = 5) -> list[dict]:
