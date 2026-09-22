@@ -208,11 +208,14 @@ if question:
             st.stop()
         with st.spinner("Consultando os manuais com IA..."):
             history = st.session_state.messages[:-1][-6:]
-            response, sources = answer(question, history, selected_sources=selected_manuals)
+            try:
+                response, sources = answer(question, history, selected_sources=selected_manuals)
+            except Exception:
+                response = "Não foi possível consultar a IA agora. Tente novamente em alguns instantes."
+                sources = []
         st.markdown(response)
-        _show_sources(sources, "Trechos usados pela IA")
         st.caption(f"Consultas com IA restantes hoje: {updated_status['remaining']}")
 
     st.session_state.messages.append(
-        {"role": "assistant", "content": response, "sources": sources, "sources_title": "Trechos usados pela IA"}
+        {"role": "assistant", "content": response, "sources": [], "sources_title": ""}
     )
