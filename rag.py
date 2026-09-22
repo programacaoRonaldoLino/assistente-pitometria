@@ -126,7 +126,12 @@ def answer(
         f"[Manual: {item['metadata']['source']} | página {item['metadata']['page']}]\n{item['text']}"
         for item in sources
     )
-    messages = list(history)
+    messages = [
+        {"role": message["role"], "content": message["content"]}
+        for message in history
+        if message.get("role") in {"user", "assistant"}
+        and isinstance(message.get("content"), str)
+    ]
     messages.append(
         {
             "role": "user",
