@@ -209,7 +209,11 @@ if question:
         with st.spinner("Consultando os manuais com IA..."):
             history = st.session_state.messages[:-1][-6:]
             try:
+                try:
                 response, sources = answer(question, history, selected_sources=selected_manuals)
+            except Exception:
+                response = "Não foi possível consultar a IA agora. Tente novamente em alguns instantes."
+                sources = []
             except Exception:
                 response = "Não foi possível consultar a IA agora. Tente novamente em alguns instantes."
                 sources = []
