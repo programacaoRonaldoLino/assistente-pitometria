@@ -49,13 +49,11 @@ from access_control import (  # noqa: E402
     user_status,
 )
 from ingest import DOCS_DIR, index_pdf  # noqa: E402
-from local_search import initialize as initialize_local_search, search as local_search  # noqa: E402
 from rag import answer, indexed_sources, openai_status  # noqa: E402
 
 
 st.set_page_config(page_title="Assistente de Pitometria", page_icon="💧", layout="wide")
 initialize_access()
-initialize_local_search()
 
 ADMIN_EMAIL = _secret("APP_ADMIN_EMAIL").lower()
 ADMIN_DAILY_LIMIT = int(_secret("APP_ADMIN_DAILY_LIMIT", "100"))
@@ -90,7 +88,7 @@ if not is_admin and (not status or not status["enabled"]):
 
 st.session_state.setdefault("messages", [])
 st.title("Assistente técnico de Pitometria e Macromedição")
-st.caption("A busca local não consome cota; respostas com IA consomem uma consulta diária.")
+st.caption("Todos os manuais são pesquisados pela IA da OpenAI. Cada pergunta consome uma consulta diária.")
 
 
 def _show_sources(sources: list[dict], title: str) -> None:
@@ -118,13 +116,6 @@ with st.sidebar:
         selected_manuals = []
         st.warning("Nenhum manual foi indexado ainda.")
 
-    search_mode = st.segmented_control(
-        "Modo de consulta",
-        options=["Busca local", "Resposta com IA"],
-        default="Busca local",
-        key="search_mode",
-        help="A busca local mostra trechos. A resposta com IA redige uma resposta baseada nos manuais.",
-    )
     status = user_status(email)
     if status:
         st.caption(f"Consultas com IA restantes hoje: {status['remaining']}")
@@ -137,21 +128,22 @@ with st.sidebar:
                 "Adicionar manuais PDF", type="pdf", accept_multiple_files=True, key="admin_uploads"
             )
             if st.button("Indexar manuais enviados", disabled=not uploaded_files, icon=":material/upload_file:"):
-                indexed_names = set(indexed_sources())
-                pending_files = [
-                    uploaded for uploaded in uploaded_files if uploaded.name not in indexed_names
-                ]
+                pending_files = [item for item in uploaded_files if item.name not in manuals]
                 if not pending_files:
-                    st.info("Os manuais selecionados já estão indexados.")
+                    st.info("Todos os PDFs selecionados já estão indexados.")
                 else:
                     DOCS_DIR.mkdir(parents=True, exist_ok=True)
-                    progress = st.progress(0, text="Preparando manuais...")
+                    progress = st.progress(0, text="Enviando manuais para a IA...")
                     for position, uploaded in enumerate(pending_files, start=1):
                         destination = DOCS_DIR / uploaded.name
-                        destination.write_bytes(uploaded.getvalue())
-                        pages = index_pdf(destination)
-                        progress.progress(position / len(pending_files), text=f"{uploaded.name}: {pages} páginas indexadas.")
-                    st.success("Manuais indexados para busca local e IA.")
+                        with destination.open("wb") as output:
+                            output.write(uploaded.getbuffer())
+                        index_pdf(destination)
+                        progress.progress(
+                            position / len(pending_files),
+                            text=f"{uploaded.name}: manual indexado pela IA.",
+                        )
+                    st.success("Manuais indexados pela IA e prontos para consulta.")
                     st.rerun()
 
         with st.expander("Liberar acesso e cotas"):
@@ -192,46 +184,35 @@ if st.button("Limpar conversa", icon=":material/delete_sweep:"):
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        _show_sources(message.get("sources", []), message.get("sources_title", "Trechos consultados"))
+        _show_sources(message.get("sources", []), message.get("sources_title", "Trechos usados pela IA"))
 
 question = st.chat_input("Pergunte sobre os manuais indexados")
 if question:
     if not selected_manuals:
         st.warning("Selecione pelo menos um manual antes de fazer uma pergunta.")
         st.stop()
+
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
     with st.chat_message("assistant"):
-        if search_mode == "Busca local":
-            sources = local_search(question, selected_manuals)
-            if sources:
-                response = "Encontrei estes trechos relevantes. Para uma explicação elaborada, selecione **Resposta com IA**."
-                st.markdown(response)
-                _show_sources(sources, "Trechos encontrados na busca local")
-            else:
-                response = "Não encontrei trechos com esses termos. Tente outra formulação ou use Resposta com IA."
-                sources = []
-                st.info(response)
-            sources_title = "Trechos encontrados na busca local"
-        else:
-            try:
-                updated_status = consume_question(email)
-            except PermissionError as exc:
-                st.error(str(exc))
-                st.stop()
-            ready, message = openai_status()
-            if not ready:
-                st.error("A IA não está disponível no momento.")
-                st.caption(message)
-                st.stop()
-            with st.spinner("Consultando os manuais com IA..."):
-                history = st.session_state.messages[:-1][-6:]
-                response, sources = answer(question, history, selected_sources=selected_manuals)
-            st.markdown(response)
-            _show_sources(sources, "Trechos usados pela IA")
-            st.caption(f"Consultas com IA restantes hoje: {updated_status['remaining']}")
-            sources_title = "Trechos usados pela IA"
+        try:
+            updated_status = consume_question(email)
+        except PermissionError as exc:
+            st.error(str(exc))
+            st.stop()
+        ready, message = openai_status()
+        if not ready:
+            st.error("A IA não está disponível no momento.")
+            st.caption(message)
+            st.stop()
+        with st.spinner("Consultando os manuais com IA..."):
+            history = st.session_state.messages[:-1][-6:]
+            response, sources = answer(question, history, selected_sources=selected_manuals)
+        st.markdown(response)
+        _show_sources(sources, "Trechos usados pela IA")
+        st.caption(f"Consultas com IA restantes hoje: {updated_status['remaining']}")
+
     st.session_state.messages.append(
-        {"role": "assistant", "content": response, "sources": sources, "sources_title": sources_title}
+        {"role": "assistant", "content": response, "sources": sources, "sources_title": "Trechos usados pela IA"}
     )
