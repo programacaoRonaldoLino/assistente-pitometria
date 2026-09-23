@@ -93,6 +93,31 @@ def indexed_sources() -> list[str]:
     return sorted(_config().get("manuals", {}).keys())
 
 
+def remove_manual(name: str) -> str | None:
+    """Remove um manual do Vector Store, do arquivo OpenAI e dos metadados."""
+    if not name or Path(name).name != name:
+        raise ValueError("Nome de manual inválido.")
+
+    config = _config()
+    file_id = config.get("manuals", {}).get(name)
+    if not file_id:
+        raise ValueError("O manual não está registrado como indexado.")
+
+    api = client()
+    store_id = vector_store_id()
+    if store_id:
+        api.vector_stores.files.delete(vector_store_id=store_id, file_id=file_id)
+
+    config["manuals"].pop(name, None)
+    _save_config(config)
+
+    try:
+        api.files.delete(file_id)
+    except Exception as exc:
+        return f"O manual saiu da busca, mas o arquivo OpenAI não pôde ser excluído: {exc}"
+    return None
+
+
 def _search(question: str, selected_sources: list[str] | None = None) -> list[dict]:
     store_id = vector_store_id()
     if not store_id:
