@@ -48,7 +48,7 @@ from access_control import (  # noqa: E402
     revoke_access,
     user_status,
 )
-from ingest import DOCS_DIR, index_pdf  # noqa: E402
+from ingest import DOCS_DIR, delete_manual, index_pdf  # noqa: E402
 from rag import answer, indexed_sources, openai_status  # noqa: E402
 
 
@@ -123,6 +123,25 @@ with st.sidebar:
     if is_admin:
         st.divider()
         st.header("Administração")
+
+        admin_status = user_status(ADMIN_EMAIL) or {"daily_limit": ADMIN_DAILY_LIMIT}
+        with st.expander("Aumentar meu limite de consultas"):
+            with st.form("admin_daily_limit_form"):
+                admin_daily_limit = st.number_input(
+                    "Consultas com IA por dia",
+                    min_value=1,
+                    max_value=10_000,
+                    value=min(10_000, max(1, int(admin_status["daily_limit"]))),
+                )
+                admin_limit_submitted = st.form_submit_button("Salvar meu limite")
+            if admin_limit_submitted:
+                try:
+                    grant_access(ADMIN_EMAIL, int(admin_daily_limit))
+                    st.success("Seu limite diário foi atualizado.")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+
         with st.expander("Indexar manuais"):
             uploaded_files = st.file_uploader(
                 "Adicionar manuais PDF", type="pdf", accept_multiple_files=True, key="admin_uploads"
@@ -145,6 +164,32 @@ with st.sidebar:
                         )
                     st.success("Manuais indexados pela IA e prontos para consulta.")
                     st.rerun()
+
+        with st.expander("Excluir manual indexado"):
+            if manuals:
+                manual_to_delete = st.selectbox(
+                    "Manual a excluir", manuals, key="manual_to_delete"
+                )
+                confirm_delete = st.checkbox(
+                    f"Confirmo a exclusão permanente de {manual_to_delete}",
+                    key="confirm_manual_delete",
+                )
+                if st.button(
+                    "Excluir manual",
+                    disabled=not confirm_delete,
+                    icon=":material/delete:",
+                ):
+                    try:
+                        deletion_warning = delete_manual(manual_to_delete)
+                        if deletion_warning:
+                            st.warning(deletion_warning)
+                        else:
+                            st.success(f"{manual_to_delete} foi excluído do Vector Store e do armazenamento local.")
+                        st.rerun()
+                    except Exception:
+                        st.error("Não foi possível excluir o manual. Ele pode continuar disponível até a conclusão da remoção.")
+            else:
+                st.info("Não há manuais indexados para excluir.")
 
         with st.expander("Liberar acesso e cotas"):
             with st.form("grant_access_form"):
