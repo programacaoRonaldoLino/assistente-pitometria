@@ -25,6 +25,75 @@ _install_hosted_secrets()
 import streamlit as st
 
 
+def _traduzir_interface_do_streamlit() -> None:
+    """Traduz os controles fixos do Streamlit que não aceitam rótulo configurável."""
+    st.html(
+        """
+        <script>
+        (() => {
+          const traducoes = new Map([
+            ["System", "Sistema"],
+            ["Light", "Claro"],
+            ["Dark", "Escuro"],
+            ["Print", "Imprimir"],
+            ["Record screen", "Gravar tela"],
+            ["Select all", "Selecionar todos"],
+            ["Choose options", "Escolha as opções"],
+            ["Clear all", "Limpar todos"],
+            ["Open", "Abrir"],
+            ["Close", "Fechar"],
+            ["Main menu", "Menu principal"],
+            ["Send message", "Enviar mensagem"],
+            ["Settings", "Configurações"],
+            ["Open settings", "Abrir configurações"],
+            ["View fullscreen", "Ver em tela cheia"],
+            ["Search", "Pesquisar"],
+            ["No options", "Nenhuma opção"],
+          ]);
+
+          const traduzir = (valor) => {
+            if (traducoes.has(valor)) return traducoes.get(valor);
+            if (valor.startsWith("Remove ")) {
+              return valor.replace("Remove", "Remover");
+            }
+            if (valor.startsWith("Made with Streamlit")) {
+              return valor.replace("Made with", "Criado com");
+            }
+            return valor;
+          };
+
+          const atualizar = () => {
+            const texto = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            const nos = [];
+            while (texto.nextNode()) nos.push(texto.currentNode);
+            nos.forEach((no) => {
+              const original = no.nodeValue;
+              const limpo = original.trim();
+              const traduzido = traduzir(limpo);
+              if (traduzido !== limpo) no.nodeValue = original.replace(limpo, traduzido);
+            });
+
+            document.querySelectorAll("[aria-label], [placeholder], [title]").forEach((elemento) => {
+              ["aria-label", "placeholder", "title"].forEach((atributo) => {
+                const original = elemento.getAttribute(atributo);
+                if (!original) return;
+                const traduzido = traduzir(original);
+                if (traduzido !== original) elemento.setAttribute(atributo, traduzido);
+              });
+            });
+          };
+
+          window.__tradutorPitometria?.disconnect();
+          atualizar();
+          window.__tradutorPitometria = new MutationObserver(atualizar);
+          window.__tradutorPitometria.observe(document.body, { childList: true, subtree: true });
+        })();
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
+
+
 def _secret(name: str, default: str = "") -> str:
     """Lê configuração do ambiente ou dos secrets sem expô-la na interface."""
     try:
@@ -53,6 +122,7 @@ from rag import answer, indexed_sources, openai_status  # noqa: E402
 
 
 st.set_page_config(page_title="Assistente de Pitometria", page_icon="💧", layout="wide")
+_traduzir_interface_do_streamlit()
 initialize_access()
 
 ADMIN_EMAIL = _secret("APP_ADMIN_EMAIL").lower()
