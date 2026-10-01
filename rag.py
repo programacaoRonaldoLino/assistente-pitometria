@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 from typing import Iterable
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from openai import OpenAI
 
@@ -13,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("APP_DATA_DIR", BASE_DIR / "data"))
 CONFIG_PATH = DATA_DIR / "openai_config.json"
 LEGACY_CONFIG_PATH = BASE_DIR / "openai_config.json"
+OPENAI_CREDIT_BALANCE_URL = "https://api.openai.com/dashboard/billing/credit_grants"
 SYSTEM_PROMPT = """Você é um assistente técnico especializado em Pitometria e Macromedição.
 
 Responda à pergunta do usuário em português, de forma direta, concisa e didática.
@@ -55,6 +58,30 @@ def openai_status() -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
     return True, "OpenAI conectado"
+
+
+def credit_balance() -> float | None:
+    """Obtém o saldo pré-pago da organização sem expor a chave ou erros da API."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    request = Request(
+        OPENAI_CREDIT_BALANCE_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            data = json.load(response)
+        balance = data.get("total_available")
+        if isinstance(balance, (int, float)):
+            return float(balance)
+    except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+        pass
+    return None
 
 
 def vector_store_id() -> str:
