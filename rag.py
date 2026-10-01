@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 from urllib.error import HTTPError, URLError
@@ -82,6 +83,24 @@ def credit_balance() -> float | None:
     except (HTTPError, URLError, TimeoutError, ValueError, OSError):
         pass
     return None
+
+
+def recorded_credit_balance() -> tuple[float | None, str | None]:
+    """Retorna o último saldo informado pelo administrador, se houver."""
+    config = _config()
+    balance = config.get("recorded_credit_balance")
+    if not isinstance(balance, (int, float)):
+        return None, None
+    updated_at = config.get("recorded_credit_balance_updated_at")
+    return float(balance), updated_at if isinstance(updated_at, str) else None
+
+
+def record_credit_balance(balance: float) -> None:
+    """Registra um saldo conferido no painel da OpenAI para consulta do admin."""
+    config = _config()
+    config["recorded_credit_balance"] = float(balance)
+    config["recorded_credit_balance_updated_at"] = datetime.now(timezone.utc).isoformat()
+    _save_config(config)
 
 
 def vector_store_id() -> str:
