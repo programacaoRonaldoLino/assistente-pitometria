@@ -118,7 +118,14 @@ from access_control import (  # noqa: E402
     user_status,
 )
 from ingest import DOCS_DIR, delete_manual, index_pdf  # noqa: E402
-from rag import answer, credit_balance, indexed_sources, openai_status  # noqa: E402
+from rag import (  # noqa: E402
+    answer,
+    credit_balance,
+    indexed_sources,
+    openai_status,
+    record_credit_balance,
+    recorded_credit_balance,
+)
 
 
 st.set_page_config(page_title="Assistente de Pitometria", page_icon="💧", layout="wide")
@@ -201,11 +208,31 @@ with st.sidebar:
         st.header("Administração")
 
         balance = _admin_credit_balance()
-        if balance is None:
-            st.caption("Saldo da API indisponível no momento.")
-        else:
+        recorded_balance, recorded_at = recorded_credit_balance()
+        if balance is not None:
             st.metric("Saldo disponível na API OpenAI", f"US$ {balance:,.2f}")
-        st.caption("Atualização automática a cada 5 minutos. Visível somente para o administrador.")
+            st.caption("Consultado automaticamente. Visível somente para o administrador.")
+        elif recorded_balance is not None:
+            st.metric("Saldo da API OpenAI", f"US$ {recorded_balance:,.2f}")
+            if recorded_at:
+                st.caption(f"Saldo informado pelo administrador em {recorded_at[:16].replace('T', ' ')} UTC.")
+        else:
+            st.info("Informe o saldo exibido na plataforma da OpenAI para mostrá-lo aqui.")
+
+        with st.expander("Atualizar saldo da API"):
+            st.caption("Digite o saldo exibido na página de cobrança da OpenAI. Este campo é visível somente para o administrador.")
+            with st.form("record_credit_balance_form"):
+                balance_to_record = st.number_input(
+                    "Saldo atual em dólares (US$)",
+                    value=float(recorded_balance or 0),
+                    step=0.01,
+                    format="%.2f",
+                )
+                balance_submitted = st.form_submit_button("Salvar saldo")
+            if balance_submitted:
+                record_credit_balance(balance_to_record)
+                st.success("Saldo atualizado no painel administrativo.")
+                st.rerun()
 
         admin_status = user_status(ADMIN_EMAIL) or {"daily_limit": ADMIN_DAILY_LIMIT}
         with st.expander("Aumentar meu limite de consultas"):
