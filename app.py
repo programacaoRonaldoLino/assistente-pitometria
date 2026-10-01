@@ -118,7 +118,7 @@ from access_control import (  # noqa: E402
     user_status,
 )
 from ingest import DOCS_DIR, delete_manual, index_pdf  # noqa: E402
-from rag import answer, indexed_sources, openai_status  # noqa: E402
+from rag import answer, credit_balance, indexed_sources, openai_status  # noqa: E402
 
 
 st.set_page_config(page_title="Assistente de Pitometria", page_icon="💧", layout="wide")
@@ -171,6 +171,12 @@ def _show_sources(sources: list[dict], title: str) -> None:
             st.caption(source["text"])
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _admin_credit_balance() -> float | None:
+    """Evita consultar o saldo da OpenAI a cada atualização da página."""
+    return credit_balance()
+
+
 with st.sidebar:
     st.header("Sua sessão")
     st.caption(email)
@@ -193,6 +199,13 @@ with st.sidebar:
     if is_admin:
         st.divider()
         st.header("Administração")
+
+        balance = _admin_credit_balance()
+        if balance is None:
+            st.caption("Saldo da API indisponível no momento.")
+        else:
+            st.metric("Saldo disponível na API OpenAI", f"US$ {balance:,.2f}")
+        st.caption("Atualização automática a cada 5 minutos. Visível somente para o administrador.")
 
         admin_status = user_status(ADMIN_EMAIL) or {"daily_limit": ADMIN_DAILY_LIMIT}
         with st.expander("Aumentar meu limite de consultas"):
