@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from openai import OpenAI
@@ -16,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("APP_DATA_DIR", BASE_DIR / "data"))
 CONFIG_PATH = DATA_DIR / "openai_config.json"
 LEGACY_CONFIG_PATH = BASE_DIR / "openai_config.json"
-OPENAI_CREDIT_BALANCE_URL = "https://api.openai.com/dashboard/billing/credit_grants"
+OPENAI_COSTS_URL = "https://api.openai.com/v1/organization/costs"
 SYSTEM_PROMPT = """Você é um assistente técnico especializado em Pitometria e Macromedição.
 
 Responda à pergunta do usuário em português, de forma direta, concisa e didática.
@@ -61,46 +62,43 @@ def openai_status() -> tuple[bool, str]:
     return True, "OpenAI conectado"
 
 
-def credit_balance() -> float | None:
-    """Obtém o saldo pré-pago da organização sem expor a chave ou erros da API."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+def project_cost_today() -> float | None:
+    """Obtém o custo acumulado de hoje para o projeto configurado."""
+    admin_key = os.environ.get("OPENAI_ADMIN_API_KEY")
+    project_id = os.environ.get("OPENAI_PROJECT_ID")
+    if not admin_key or not project_id:
         return None
 
+    now = datetime.now(timezone.utc)
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    query = urlencode(
+        {
+            "start_time": int(start_of_day.timestamp()),
+            "end_time": int(now.timestamp()),
+            "bucket_width": "1d",
+            "group_by": "project_id",
+            "project_ids": project_id,
+            "limit": 1,
+        }
+    )
     request = Request(
-        OPENAI_CREDIT_BALANCE_URL,
+        f"{OPENAI_COSTS_URL}?{query}",
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {admin_key}",
             "Accept": "application/json",
         },
     )
     try:
         with urlopen(request, timeout=10) as response:
             data = json.load(response)
-        balance = data.get("total_available")
-        if isinstance(balance, (int, float)):
-            return float(balance)
-    except (HTTPError, URLError, TimeoutError, ValueError, OSError):
-        pass
-    return None
-
-
-def recorded_credit_balance() -> tuple[float | None, str | None]:
-    """Retorna o último saldo informado pelo administrador, se houver."""
-    config = _config()
-    balance = config.get("recorded_credit_balance")
-    if not isinstance(balance, (int, float)):
-        return None, None
-    updated_at = config.get("recorded_credit_balance_updated_at")
-    return float(balance), updated_at if isinstance(updated_at, str) else None
-
-
-def record_credit_balance(balance: float) -> None:
-    """Registra um saldo conferido no painel da OpenAI para consulta do admin."""
-    config = _config()
-    config["recorded_credit_balance"] = float(balance)
-    config["recorded_credit_balance_updated_at"] = datetime.now(timezone.utc).isoformat()
-    _save_config(config)
+        return sum(
+            float(result["amount"]["value"])
+            for bucket in data.get("data", [])
+            for result in bucket.get("results", [])
+            if isinstance(result.get("amount", {}).get("value"), (int, float))
+        )
+    except (HTTPError, URLError, TimeoutError, ValueError, OSError, KeyError):
+        return None
 
 
 def vector_store_id() -> str:
